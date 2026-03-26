@@ -1,0 +1,115 @@
+
+tal_tested": 12,
+  "passed": 12,
+  "failed": 0,
+  "details": [
+    {
+      "column": "temperature_slow_change",
+      "expected": "fill_missing_ffill",
+      "actual": "fill_missing_ffill",
+      "missing_rate": 3.0,
+      "data_type": "float64",
+      "reason": "缺失值为连续少量缺失且数据随时间缓慢变化，推荐使用前向填充保留时间趋势",
+      "passed": true
+    },
+    {
+      "column": "humidity_smooth",
+      "expected": "fill_missing_ffill",
+      "actual": "fill_missing_ffill",
+      "missing_rate": 2.0,
+      "data_type": "float64",
+      "reason": "缺失值为连续少量缺失且数据随时间缓慢变化，推荐使用前向填充保留时间趋势",
+      "passed": true
+    },
+    {
+      "column": "smooth_trend_large_missing",
+      "expected": "fill_missing_interpolate",
+      "actual": "fill_missing_interpolate",
+      "missing_rate": 11.0,
+      "data_type": "float64",
+      "reason": "存在连续多行缺失且数据有明显线性或平滑趋势，推荐使用线性插值",
+      "passed": true
+    },
+    {
+      "column": "start_missing_data",
+      "expected": "fill_missing_interpolate",
+      "actual": "fill_missing_interpolate",
+      "missing_rate": 4.0,
+      "data_type": "float64",
+      "reason": "存在连续多行缺失且数据有明显线性或平滑趋势，推荐使用线性插值",
+      "passed": true
+    },
+    {
+      "column": "category_high_mode",
+      "expected": "fill_missing_mode",
+      "actual": "fill_missing_mode",
+      "missing_rate": 10.0,
+      "data_type": "object",
+      "reason": "类别型数据，众数占比超过40%，推荐使用众数填充",
+      "passed": true
+    },
+    {
+      "column": "category_low_mode",
+      "expected": "fill_missing_mode",
+      "actual": "fill_missing_mode",
+      "missing_rate": 12.0,
+      "data_type": "object",
+      "reason": "类别型数据，推荐使用众数填充（最频繁值）",
+      "passed": true
+    },
+    {
+      "column": "normal_distribution",
+      "expected": "fill_missing_mean",
+      "actual": "fill_missing_mean",
+      "missing_rate": 10.0,
+      "data_type": "float64",
+      "reason": "数值型数据接近正态分布，推荐使用均值填充",
+      "passed": true
+    },
+    {
+      "column": "skewed_distribution",
+      "expected": "fill_missing_median",
+      "actual": "fill_missing_median",
+      "missing_rate": 15.0,
+      "data_type": "float64",
+      "reason": "数值型数据存在显著异常值，推荐使用对离群值不敏感的中位数填充",
+      "passed": true
+    },
+    {
+      "column": "with_outliers",
+      "expected": "fill_missing_median",
+      "actual": "fill_missing_median",
+      "missing_rate": 8.0,
+      "data_type": "float64",
+      "reason": "数值型数据呈偏态分布，推荐使用中位数填充",
+      "passed": true
+    },
+    {
+      "column": "time_series_data",
+      "expected": "fill_missing_interpolate",
+      "actual": "fill_missing_interpolate",
+      "missing_rate": 6.0,
+      "data_type": "float64",
+      "reason": "存在连续多行缺失且数据有明显线性或平滑趋势，推荐使用线性插值",
+      "passed": true
+    },
+    {
+      "column": "high_missing_rate",
+      "expected": "ask_user",
+      "actual": "ask_user",
+      "missing_rate": 40.0,
+      "data_type": "float64",
+      "reason": "缺失率过高(40.0%)，建议由用户确认处理方式或考虑删除该列",
+      "passed": true
+    },
+    {
+      "column": "no_missing_data",
+      "expected": "no_action",
+      "actual": "no_action",
+      "missing_rate": 0.0,
+      "data_type": "float64",
+      "reason": "该列无缺失值",
+      "passed": true
+    }
+  ]
+}
