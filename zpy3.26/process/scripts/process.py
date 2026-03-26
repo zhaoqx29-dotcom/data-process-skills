@@ -1,9 +1,9 @@
 """
 Process - 数据处理子 skill
-负责执行数据处理、生成评价报告和对比图表
+负责执行数据处理、生成评价报告
 
 使用方式：
-    from process import chain_execute, generate_evaluation_report, generate_comparison_chart
+    from process import chain_execute, generate_evaluation_report, save_processed_data
 
     # 执行链式处理
     df_result = chain_execute(df, plan, verbose=True)
@@ -11,8 +11,9 @@ Process - 数据处理子 skill
     # 生成评价报告
     evaluation_report = generate_evaluation_report(df, df_result, plan)
 
-    # 生成对比图表
-    chart_path = generate_comparison_chart(df, df_result, plan)
+    # 保存处理后的数据
+    saved_path = save_processed_data(df_result, 'data.csv')
+    # 保存为: data-处理后.csv
 """
 
 import pandas as pd
@@ -81,7 +82,93 @@ def fill_missing_interpolate(df: pd.DataFrame, columns: List[str], method: str =
     return df
 
 
-# ==================== 滤波降噪 ====================
+def fill_missing_knn(df: pd.DataFrame, columns: List[str], n_neighbors: int = 5) -> pd.DataFrame:
+    """KNN 插补 - 用户文档策略支持"""
+    try:
+        from sklearn.impute import KNNImputer
+        df = df.copy()
+        # 只对数值型列进行 KNN 插补
+        numeric_cols = [col for col in columns if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]]
+        if numeric_cols:
+            imputer = KNNImputer(n_neighbors=n_neighbors)
+            df[numeric_cols] = imputer.fit_transform(df[numeric_cols])
+        return df
+    except ImportError:
+        # 如果没有 sklearn，使用中位数填充作为后备
+        return fill_missing_median(df, columns)
+
+
+def fill_missing_random_forest(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+    """随机森林插补 - 用户文档策略支持"""
+    # 简化实现：使用迭代插补
+    try:
+        from sklearn.impute import IterativeImputer
+        from sklearn.ensemble import RandomForestRegressor
+        df = df.copy()
+        numeric_cols = [col for col in columns if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]]
+        if numeric_cols:
+            imputer = IterativeImputer(estimator=RandomForestRegressor(n_estimators=10, random_state=42), max_iter=10)
+            df[numeric_cols] = imputer.fit_transform(df[numeric_cols])
+        return df
+    except ImportError:
+        return fill_missing_median(df, columns)
+
+
+# ==================== 异常值处理 ====================
+
+def handle_outliers_iqr(df: pd.DataFrame, columns: List[str], method: str = 'clip') -> pd.DataFrame:
+    """IQR 方法处理异常值 - 用户文档策略支持
+
+    Args:
+        df: DataFrame
+        columns: 列名列表
+        method: 处理方法，'clip'（截断）或 'delete'（删除）
+
+    Returns:
+        处理后的 DataFrame
+    """
+    df = df.copy()
+    for col in columns:
+        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+
+            if method == 'clip':
+                df[col] = df[col].clip(lower=lower_bound, upper=upper_bound)
+            elif method == 'delete':
+                df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
+
+    return df
+
+
+def handle_outliers_3sigma(df: pd.DataFrame, columns: List[str], method: str = 'clip') -> pd.DataFrame:
+    """3σ 原则处理异常值 - 用户文档策略支持
+
+    Args:
+        df: DataFrame
+        columns: 列名列表
+        method: 处理方法，'clip'（截断）或 'delete'（删除）
+
+    Returns:
+        处理后的 DataFrame
+    """
+    df = df.copy()
+    for col in columns:
+        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
+            mean = df[col].mean()
+            std = df[col].std()
+            lower_bound = mean - 3 * std
+            upper_bound = mean + 3 * std
+
+            if method == 'clip':
+                df[col] = df[col].clip(lower=lower_bound, upper=upper_bound)
+            elif method == 'delete':
+                df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
+
+    return df
 
 def filter_median(df: pd.DataFrame, columns: List[str], window_size: int = 3) -> pd.DataFrame:
     """中值滤波"""
@@ -182,9 +269,23 @@ def normalize_log(df: pd.DataFrame, columns: List[str],
 
             if base == '10':
                 df[col] = np.log10(shifted_data)
+            elif base == '2':
+                df[col] = np.log2(shifted_data)
             else:
                 df[col] = np.log(shifted_data)
 
+    return df
+
+
+def normalize_standard(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+    """StandardScaler 标准化 (均值0，方差1) - 用户文档策略支持"""
+    df = df.copy()
+    for col in columns:
+        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
+            mean = df[col].mean()
+            std = df[col].std()
+            if std != 0:
+                df[col] = (df[col] - mean) / std
     return df
 
 
@@ -285,6 +386,53 @@ def chain_execute(df: pd.DataFrame, plan: List[Dict], verbose: bool = True) -> p
         df_processed = func(**params)
 
     return df_processed
+
+
+def save_processed_data(df: pd.DataFrame, original_file_path: str = "") -> str:
+    """保存处理后的数据
+
+    Args:
+        df: 处理后的 DataFrame
+        original_file_path: 原始文件路径
+
+    Returns:
+        保存的文件路径
+    """
+    if original_file_path:
+        # 从原文件路径生成新文件名
+        if original_file_path.endswith('.csv'):
+            new_path = original_file_path.replace('.csv', '-处理后.csv')
+        elif original_file_path.endswith('.xlsx'):
+            new_path = original_file_path.replace('.xlsx', '-处理后.xlsx')
+        elif original_file_path.endswith('.xls'):
+            new_path = original_file_path.replace('.xls', '-处理后.xls')
+        else:
+            new_path = original_file_path + '-处理后'
+    else:
+        new_path = "处理后数据.csv"
+
+    if new_path.endswith('.csv'):
+        df.to_csv(new_path, index=False, encoding='utf-8-sig')
+    elif new_path.endswith('.xlsx') or new_path.endswith('.xls'):
+        df.to_excel(new_path, index=False)
+
+    return new_path
+
+
+def save_report(content: str, file_name: str) -> str:
+    """保存报告为 Markdown 文件
+
+    Args:
+        content: 报告内容
+        file_name: 文件名
+
+    Returns:
+        保存的文件路径
+    """
+    save_path = file_name if file_name.endswith('.md') else f"{file_name}.md"
+    with open(save_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    return save_path
 
 
 # ==================== 评价与图表 ====================

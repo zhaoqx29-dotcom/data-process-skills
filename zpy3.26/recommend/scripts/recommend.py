@@ -3,10 +3,16 @@ Recommend - 策略推荐子 skill
 负责分析数据特征、推荐处理策略并生成调用链表
 
 使用方式：
-    from recommend import recommend_strategy, generate_strategy_table, generate_plan
+    from recommend import recommend_strategy, generate_strategy_table, generate_plan, parse_user_strategy_doc, match_user_strategy
+
+    # 解析用户策略文档
+    user_strategy = parse_user_strategy_doc('数据预处理建议.md')
 
     # 推荐策略
     strategies = recommend_strategy(df, target_columns, business_context='sensor_data')
+
+    # 匹配用户文档策略
+    matched = match_user_strategy(df, strategies, user_strategy, parsed_columns)
 
     # 生成策略表
     strategy_table = generate_strategy_table(strategies, parsed_columns)
@@ -17,7 +23,8 @@ Recommend - 策略推荐子 skill
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional
+import re
+from typing import Dict, List, Optional, Tuple
 
 
 # 需要从 analyze 导入 assess 函数
@@ -128,8 +135,8 @@ def assess(df: pd.DataFrame) -> Dict:
 
                 if len(col_data) > 10:
                     diff = col_data.diff().dropna()
-                    if len(diff) > 0:
-                        if diff.std() / diff.mean() < 0.5:
+                    if len(diff) > 0 and diff.mean() != 0:
+                        if diff.std() / abs(diff.mean()) < 0.5:
                             characteristics.append("周期性数据")
             elif dtype_str == "object" or dtype_str == "str":
                 characteristics.append("文本型")
@@ -488,9 +495,220 @@ def generate_plan(strategies: Dict, parsed_columns: List[tuple]) -> List[Dict]:
     return plan
 
 
+def parse_user_strategy_doc(doc_path: str) -> Dict:
+    """解析用户策略文档
+
+    Args:
+        doc_path: 文档路径
+
+    Returns:
+        解析后的策略字典
+    """
+    try:
+        with open(doc_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+
+    strategy = {
+        "missing": {
+            "light": [],     # 轻度缺失 <5%
+            "medium": [],    # 中度缺失 5-20%
+            "heavy": []     # 重度缺失 >20%
+        },
+        "outlier": {
+            "methods": [],   # 检测方法
+            "treatments": [] # 处理方法
+        },
+        "normalize": {
+            "methods": []   # 标准化方法
+        }
+    }
+
+    # 解析缺失值处理策略
+    missing_pattern = r'##\s*1\.?\s*缺失值处理[\s\S]*?(?=##|\Z)'
+    missing_match = re.search(missing_pattern, content)
+    if missing_match:
+        missing_text = missing_match.group()
+        # 轻度缺失
+        if '轻度' in missing_text or '<5%' in missing_text:
+            if '均值' in missing_text:
+                strategy["missing"]["light"].append("mean")
+            if '中位数' in missing_text:
+                strategy["missing"]["light"].append("median")
+            if '众数' in missing_text:
+                strategy["missing"]["light"].append("mode")
+        # 中度缺失
+        if '中度' in missing_text or '5-20%' in missing_text:
+            if 'KNN' in missing_text:
+                strategy["missing"]["medium"].append("knn")
+            if '随机森林' in missing_text:
+                strategy["missing"]["medium"].append("random_forest")
+        # 重度缺失
+        if '重度' in missing_text or '>20%' in missing_text:
+            if '删除' in missing_text:
+                strategy["missing"]["heavy"].append("drop")
+            if '领域知识' in missing_text:
+                strategy["missing"]["heavy"].append("domain_knowledge")
+
+    # 解析异常值处理策略
+    outlier_pattern = r'##\s*2\.?\s*异常值[\s\S]*?(?=##|\Z)'
+    outlier_match = re.search(outlier_pattern, content)
+    if outlier_match:
+        outlier_text = outlier_match.group()
+        if '3σ' in outlier_text or '3σ' in outlier_text:
+            strategy["outlier"]["methods"].append("3sigma")
+        if 'IQR' in outlier_text or '箱线图' in outlier_text:
+            strategy["outlier"]["methods"].append("iqr")
+        if 'DBSCAN' in outlier_text:
+            strategy["outlier"]["methods"].append("dbscan")
+        if '截断' in outlier_text:
+            strategy["outlier"]["treatments"].append("clip")
+        if '删除' in outlier_text:
+            strategy["outlier"]["treatments"].append("delete")
+
+    # 解析标准化策略
+    normalize_pattern = r'##\s*3\.?\s*(?:数据)?标准化[/归一化]*[\s\S]*?(?=##|\Z)'
+    normalize_match = re.search(normalize_pattern, content)
+    if normalize_match:
+        normalize_text = normalize_match.group()
+        if 'StandardScaler' in normalize_text or '标准化' in normalize_text:
+            strategy["normalize"]["methods"].append("standard")
+        if 'MinMaxScaler' in normalize_text or '归一化' in normalize_text:
+            strategy["normalize"]["methods"].append("minmax")
+
+    return strategy
+
+
+def match_user_strategy(df: pd.DataFrame, strategies: Dict, user_strategy: Dict,
+                        parsed_columns: List[tuple]) -> List[Dict]:
+    """根据数据特征匹配用户文档策略
+
+    Args:
+        df: DataFrame
+        strategies: skill 内置推荐策略
+        user_strategy: 用户策略文档解析结果
+        parsed_columns: 解析后的列和需求列表
+
+    Returns:
+        匹配结果列表
+    """
+    matched = []
+    report = assess(df)
+
+    for col, needs in parsed_columns:
+        if col not in df.columns:
+            continue
+
+        missing_rate = report["missing"][col]["percentage"]
+        characteristics = report["column_analysis"][col]["characteristics"]
+        has_outliers = "存在显著异常值" in characteristics
+
+        # 缺失值处理匹配
+        if "缺失值填充" in needs or "缺失值" in needs:
+            method = "N/A"
+            user_method = "N/A"
+
+            # Skill 内置推荐
+            skill_strategy = strategies.get(col, {})
+            missing_method = skill_strategy.get("missing_method", "")
+            if missing_method:
+                method = missing_method.replace("fill_missing_", "")
+
+            # 匹配用户文档
+            if missing_rate < 5 and user_strategy.get("missing", {}).get("light"):
+                user_method = "/".join(user_strategy["missing"]["light"])
+            elif 5 <= missing_rate <= 20 and user_strategy.get("missing", {}).get("medium"):
+                user_method = "/".join(user_strategy["missing"]["medium"])
+            elif missing_rate > 20 and user_strategy.get("missing", {}).get("heavy"):
+                user_method = "/".join(user_strategy["missing"]["heavy"])
+
+            matched.append({
+                "col": col,
+                "process_type": "缺失值处理",
+                "data_feature": f"缺失率{missing_rate}%({'轻度' if missing_rate < 5 else '中度' if missing_rate <= 20 else '重度'})",
+                "skill_method": method,
+                "user_method": user_method,
+                "user_strategy_available": user_method != "N/A"
+            })
+
+        # 异常值处理匹配
+        if "异常值" in needs or "滤波降噪" in needs:
+            method = "N/A"
+            user_method = "N/A"
+
+            skill_strategy = strategies.get(col, {})
+            filter_method = skill_strategy.get("filter_method", "")
+            if filter_method:
+                method = filter_method.replace("filter_", "")
+
+            if has_outliers and user_strategy.get("outlier", {}).get("methods"):
+                user_method = "/".join(user_strategy["outlier"]["methods"])
+
+            matched.append({
+                "col": col,
+                "process_type": "异常值处理",
+                "data_feature": "存在显著异常值" if has_outliers else "无显著异常值",
+                "skill_method": method,
+                "user_method": user_method,
+                "user_strategy_available": user_method != "N/A"
+            })
+
+        # 标准化匹配
+        if "标准化" in str(needs) or "归一化" in str(needs) or "标准化归一化" in str(needs):
+            method = "N/A"
+            user_method = "N/A"
+
+            if user_strategy.get("normalize", {}).get("methods"):
+                user_method = "/".join(user_strategy["normalize"]["methods"])
+
+            matched.append({
+                "col": col,
+                "process_type": "标准化/归一化",
+                "data_feature": "数值型特征",
+                "skill_method": "minmax/log",
+                "user_method": user_method,
+                "user_strategy_available": user_method != "N/A"
+            })
+
+    return matched
+
+
+def generate_comparison_table(matched: List[Dict]) -> str:
+    """生成策略对比表格
+
+    Args:
+        matched: 匹配结果列表
+
+    Returns:
+        Markdown 格式的对比表格
+    """
+    if not matched:
+        return ""
+
+    lines = [
+        "| 列名 | 处理类型 | 数据特征 | Skill内置推荐 | 用户文档匹配策略 | 选择 |",
+        "|------|----------|----------|--------------|-----------------|------|"
+    ]
+
+    for m in matched:
+        user_method = m["user_method"] if m["user_method"] != "N/A" else "无对应策略"
+        lines.append(
+            f"| {m['col']} | {m['process_type']} | {m['data_feature']} | "
+            f"{m['skill_method']} | {user_method} | [1]/[2]/[3] |"
+        )
+
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     print("Recommend - 策略推荐子 skill")
     print("\n支持的函数：")
     print("  - recommend_strategy: 智能推荐处理策略")
     print("  - generate_strategy_table: 生成策略表")
     print("  - generate_plan: 生成调用链表")
+    print("  - parse_user_strategy_doc: 解析用户策略文档")
+    print("  - match_user_strategy: 匹配用户文档策略")
+    print("  - generate_comparison_table: 生成对比表格")
