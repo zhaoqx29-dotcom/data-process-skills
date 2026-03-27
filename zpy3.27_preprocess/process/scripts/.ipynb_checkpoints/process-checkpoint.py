@@ -415,13 +415,7 @@ def generate_comparison_chart(df_before: pd.DataFrame, df_after: pd.DataFrame,
     try:
         import matplotlib.pyplot as plt
         import matplotlib
-
-        # 使用非交互式后端
         matplotlib.use('Agg')
-
-        # 设置中文字体
-        plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'SimHei', 'Microsoft YaHei', 'Arial']
-        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示为方块的问题
 
         # 收集所有处理的列
         all_cols = set()
