@@ -406,7 +406,7 @@ FE_y:缺失值填充,滤波降噪
 - `generate_plan(strategies, parsed_columns)` - 生成调用链表
 
 ### process
-数据处理子 skill，负责执行数据处理、生成评价报告和对比图表。
+数据处理子 skill，负责执行数据处理、生成评价报告。
 
 **链式执行：**
 - `chain_execute(df, plan, verbose)` - 链式执行多种处理操作
@@ -429,9 +429,8 @@ FE_y:缺失值填充,滤波降噪
 - `normalize_custom_range(df, columns, target_min, target_max)` - 指定区间缩放
 - `normalize_log(df, columns, offset, base)` - 对数变换
 
-**评价与图表：**
+**评价报告：**
 - `generate_evaluation_report(df_before, df_after, plan)` - 生成评价报告
-- `generate_comparison_chart(df_before, df_after, plan)` - 生成对比图表
 
 ## 处理结果评价报告格式
 
@@ -468,15 +467,6 @@ FE_y:缺失值填充,滤波降噪
 ### 整体效果评价
 - 数据质量提升: {描述}
 - 业务适用性: {描述}
-- 建议后续操作: {建议}
-
-### 图表对比
-- 数据处理前后对比图表已保存: 数据处理前后图表对比.png
-
-**图表说明：**
-- 缺失值处理：展示填充前后数据分布对比（直方图/缺失值位置图）
-- 滤波降噪：展示原始与滤波后数据趋势对比（折线图）
-- 标准化归一化：展示处理前后数据范围对比（直方图/箱线图）
 - 建议后续操作: {建议}
 ```
 

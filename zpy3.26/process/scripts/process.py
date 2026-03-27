@@ -547,62 +547,62 @@ def generate_evaluation_report(df_before: pd.DataFrame, df_after: pd.DataFrame,
     return report_content
 
 
-def generate_comparison_chart(df_before: pd.DataFrame, df_after: pd.DataFrame,
-                              plan: List[Dict], save_path: str = "数据处理前后图表对比.png") -> str:
-    """生成对比图表
-
-    Args:
-        df_before: 处理前 DataFrame
-        df_after: 处理后 DataFrame
-        plan: 处理计划
-        save_path: 保存路径
-
-    Returns:
-        图表保存路径
-    """
-    try:
-        import matplotlib.pyplot as plt
-        import matplotlib
-        matplotlib.use('Agg')
-
-        # 收集所有处理的列
-        all_cols = set()
-        for step_plan in plan:
-            all_cols.update(step_plan.get("columns", []))
-
-        if not all_cols:
-            return ""
-
-        # 创建图表
-        n_cols = len(all_cols)
-        fig, axes = plt.subplots(n_cols, 2, figsize=(12, 4 * n_cols))
-
-        if n_cols == 1:
-            axes = axes.reshape(1, -1)
-
-        for idx, col in enumerate(all_cols):
-            if col not in df_before.columns or col not in df_after.columns:
-                continue
-
-            # 处理前数据分布
-            axes[idx, 0].hist(df_before[col].dropna(), bins=30, alpha=0.7, color='blue', edgecolor='black')
-            axes[idx, 0].set_title(f'{col} - 处理前')
-            axes[idx, 0].set_xlabel('值')
-            axes[idx, 0].set_ylabel('频数')
-
-            # 处理后数据分布
-            axes[idx, 1].hist(df_after[col].dropna(), bins=30, alpha=0.7, color='green', edgecolor='black')
-            axes[idx, 1].set_title(f'{col} - 处理后')
-            axes[idx, 1].set_xlabel('值')
-            axes[idx, 1].set_ylabel('频数')
-
-        plt.tight_layout()
-        plt.savefig(save_path, dpi=150)
-        plt.close()
-
-        return save_path
-    except Exception as e:
-        return f"图表生成失败: {str(e)}"
+# def generate_comparison_chart(df_before: pd.DataFrame, df_after: pd.DataFrame,
+#                               plan: List[Dict], save_path: str = "数据处理前后图表对比.png") -> str:
+#     """生成对比图表
+#
+#     Args:
+#         df_before: 处理前 DataFrame
+#         df_after: 处理后 DataFrame
+#         plan: 处理计划
+#         save_path: 保存路径
+#
+#     Returns:
+#         图表保存路径
+#     """
+#     try:
+#         import matplotlib.pyplot as plt
+#         import matplotlib
+#         matplotlib.use('Agg')
+#
+#         # 收集所有处理的列
+#         all_cols = set()
+#         for step_plan in plan:
+#             all_cols.update(step_plan.get("columns", []))
+#
+#         if not all_cols:
+#             return ""
+#
+#         # 创建图表
+#         n_cols = len(all_cols)
+#         fig, axes = plt.subplots(n_cols, 2, figsize=(12, 4 * n_cols))
+#
+#         if n_cols == 1:
+#             axes = axes.reshape(1, -1)
+#
+#         for idx, col in enumerate(all_cols):
+#             if col not in df_before.columns or col not in df_after.columns:
+#                 continue
+#
+#             # 处理前数据分布
+#             axes[idx, 0].hist(df_before[col].dropna(), bins=30, alpha=0.7, color='blue', edgecolor='black')
+#             axes[idx, 0].set_title(f'{col} - 处理前')
+#             axes[idx, 0].set_xlabel('值')
+#             axes[idx, 0].set_ylabel('频数')
+#
+#             # 处理后数据分布
+#             axes[idx, 1].hist(df_after[col].dropna(), bins=30, alpha=0.7, color='green', edgecolor='black')
+#             axes[idx, 1].set_title(f'{col} - 处理后')
+#             axes[idx, 1].set_xlabel('值')
+#             axes[idx, 1].set_ylabel('频数')
+#
+#         plt.tight_layout()
+#         plt.savefig(save_path, dpi=150)
+#         plt.close()
+#
+#         return save_path
+#     except Exception as e:
+#         return f"图表生成失败: {str(e)}"
 
 
 if __name__ == "__main__":
@@ -614,4 +614,4 @@ if __name__ == "__main__":
     print("  - 标准化: normalize_minmax, normalize_custom_range, normalize_log")
     print("  - 链式执行: chain_execute")
     print("  - 评价报告: generate_evaluation_report")
-    print("  - 对比图表: generate_comparison_chart")
+    # print("  - 对比图表: generate_comparison_chart")
