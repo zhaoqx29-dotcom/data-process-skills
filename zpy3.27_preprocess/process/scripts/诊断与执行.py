@@ -1,25 +1,20 @@
 """
-Process - 数据处理子 skill
-负责执行数据处理、生成评价报告和对比图表
-
-使用方式：
-    from process import chain_execute, generate_evaluation_report, generate_comparison_chart
-
-    # 执行链式处理
-    df_result = chain_execute(df, plan, verbose=True)
-
-    # 生成评价报告
-    evaluation_report = generate_evaluation_report(df, df_result, plan)
-
-    # 生成对比图表
-    chart_path = generate_comparison_chart(df, df_result, plan)
+诊断与执行模块
+数据诊断、交互确认、链式执行、评价报告
 """
 
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional
-from scipy import signal
-from scipy.fft import fft, ifft, fftfreq
+
+# 尝试导入子模块（作为包时使用相对导入，独立运行时使用绝对导入）
+try:
+    from . import 缺失值填充, 滤波降噪, 标准化归一化, 数据替换, 异常值处理
+except ImportError:
+    import 缺失值填充
+    import 滤波降噪
+    import 标准化归一化
+    import 标准化归一化
 
 
 # ==================== 数据诊断 ====================
@@ -108,7 +103,9 @@ def diagnose_data(df: pd.DataFrame) -> Dict:
             "column": col,
             "description": f"异常值: {info['count']}个",
             "method": "clip",
-            "action": "clip_outliers"
+            "action": "clip_outliers",
+            "lower_bound": info["lower_bound"],
+            "upper_bound": info["upper_bound"]
         })
 
     # 重复行建议
@@ -137,14 +134,7 @@ def diagnose_data(df: pd.DataFrame) -> Dict:
 
 
 def print_diagnosis_report(diagnosis: Dict) -> str:
-    """打印诊断报告并返回格式化字符串
-
-    Args:
-        diagnosis: 诊断结果字典
-
-    Returns:
-        格式化的诊断报告字符串
-    """
+    """打印诊断报告并返回格式化字符串"""
     lines = ["=" * 60, "数据诊断报告", "=" * 60, ""]
 
     # 缺失值
@@ -185,7 +175,7 @@ def interactive_confirm_and_process(df: pd.DataFrame, auto_confirm: bool = False
 
     Args:
         df: 输入 DataFrame
-        auto_confirm: 是否自动确认处理（跳过交互，用于非交互环境）
+        auto_confirm: 是否自动确认（跳过交互）
 
     Returns:
         (处理后的DataFrame, 处理计划plan, 诊断报告)
@@ -233,21 +223,13 @@ def interactive_confirm_and_process(df: pd.DataFrame, auto_confirm: bool = False
 
 
 def modify_recommendations(recommendations: List[Dict]) -> List[Dict]:
-    """交互式修改处理建议
-
-    Args:
-        recommendations: 原始处理建议列表
-
-    Returns:
-        修改后的处理建议列表
-    """
+    """交互式修改处理建议"""
     recommendations = [r.copy() for r in recommendations]
 
     print("\n" + "=" * 50)
     print("修改处理建议")
     print("=" * 50)
 
-    # 打印所有建议及其编号
     print("\n当前处理建议：")
     for i, r in enumerate(recommendations):
         print(f"  [{i+1}] {r['description']} → {r['method']}")
@@ -259,7 +241,6 @@ def modify_recommendations(recommendations: List[Dict]) -> List[Dict]:
         print("未修改任何建议。")
         return recommendations
 
-    # 解析用户输入的编号
     try:
         indices = [int(x.strip()) - 1 for x in user_input.split(',') if x.strip()]
         indices = [i for i in indices if 0 <= i < len(recommendations)]
@@ -267,13 +248,11 @@ def modify_recommendations(recommendations: List[Dict]) -> List[Dict]:
         print("输入格式有误，未修改任何建议。")
         return recommendations
 
-    # 逐个修改
     for idx in indices:
         r = recommendations[idx]
         print(f"\n修改建议 [{idx+1}]: {r['description']}")
         print(f"当前处理方式: {r['method']}")
 
-        # 根据不同类型提供不同的选项
         if r["issue"] == "missing":
             print("请选择填充方式：")
             print("  1) mean   - 均值填充")
@@ -330,7 +309,6 @@ def modify_recommendations(recommendations: List[Dict]) -> List[Dict]:
                     r["method"] = "skip"
                     r["action"] = "skip"
 
-    # 过滤掉 skip 的建议
     recommendations = [r for r in recommendations if r.get("action") != "skip"]
 
     print("\n修改后的处理建议：")
@@ -342,21 +320,12 @@ def modify_recommendations(recommendations: List[Dict]) -> List[Dict]:
 
 
 def apply_recommendations(df: pd.DataFrame, recommendations: List[Dict]) -> tuple:
-    """根据处理建议自动处理数据
-
-    Args:
-        df: 输入 DataFrame
-        recommendations: 处理建议列表
-
-    Returns:
-        (处理后的DataFrame, 处理计划plan)
-    """
+    """根据处理建议自动处理数据"""
     df_processed = df.copy()
     plan = []
-
     step_num = 1
 
-    # 先处理重复行
+    # 处理重复行
     dup_recommendations = [r for r in recommendations if r["issue"] == "duplicates"]
     if dup_recommendations:
         df_processed = df_processed.drop_duplicates()
@@ -373,7 +342,6 @@ def apply_recommendations(df: pd.DataFrame, recommendations: List[Dict]) -> tupl
     # 处理缺失值
     missing_recommendations = [r for r in recommendations if r["issue"] == "missing"]
     if missing_recommendations:
-        # 按列分组
         cols_by_method = {}
         for r in missing_recommendations:
             method = r["method"]
@@ -383,15 +351,15 @@ def apply_recommendations(df: pd.DataFrame, recommendations: List[Dict]) -> tupl
 
         for method, cols in cols_by_method.items():
             if method == "mean":
-                df_processed = fill_missing_mean(df_processed, cols)
+                df_processed = 缺失值填充.fill_missing_mean(df_processed, cols)
             elif method == "median":
-                df_processed = fill_missing_median(df_processed, cols)
+                df_processed = 缺失值填充.fill_missing_median(df_processed, cols)
             elif method == "ffill":
-                df_processed = fill_missing_ffill(df_processed, cols)
+                df_processed = 缺失值填充.fill_missing_ffill(df_processed, cols)
             elif method == "bfill":
-                df_processed = fill_missing_bfill(df_processed, cols)
+                df_processed = 缺失值填充.fill_missing_bfill(df_processed, cols)
             elif method == "interpolate":
-                df_processed = fill_missing_interpolate(df_processed, cols)
+                df_processed = 缺失值填充.fill_missing_interpolate(df_processed, cols)
 
             plan.append({
                 "step": step_num,
@@ -405,251 +373,73 @@ def apply_recommendations(df: pd.DataFrame, recommendations: List[Dict]) -> tupl
 
     # 处理异常值
     outlier_recommendations = [r for r in recommendations if r["issue"] == "outliers"]
-    if outlier_recommendations:
-        for r in outlier_recommendations:
-            col = r["column"]
-            bounds = r.get("bounds", {})
-            lower = bounds.get("lower_bound")
-            upper = bounds.get("upper_bound")
-
-            if col in df_processed.columns and lower is not None and upper is not None:
-                df_processed[col] = df_processed[col].clip(lower, upper)
-
-                plan.append({
-                    "step": step_num,
-                    "step_name": "裁剪异常值",
-                    "columns": [col],
-                    "func": "clip_outliers",
-                    "method": "clip",
-                    "description": f"裁剪到[{lower:.2f}, {upper:.2f}]"
-                })
-                step_num += 1
-
-    # 处理噪声
-    noise_recommendations = [r for r in recommendations if r["issue"] == "noise"]
-    if noise_recommendations:
-        for r in noise_recommendations:
-            col = r["column"]
-            window_size = r.get("window_size", 5)
-
-            if r["method"] == "moving_avg":
-                df_processed = filter_moving_avg(df_processed, [col], window_size=window_size)
-            elif r["method"] == "median":
-                df_processed = filter_median(df_processed, [col], window_size=window_size)
-
+    for r in outlier_recommendations:
+        col = r["column"]
+        if col in df_processed.columns:
+            df_processed[col] = df_processed[col].clip(
+                r.get("lower_bound", -np.inf),
+                r.get("upper_bound", np.inf)
+            )
             plan.append({
                 "step": step_num,
-                "step_name": "降噪平滑",
+                "step_name": "裁剪异常值",
                 "columns": [col],
-                "func": "filter_noise",
-                "method": r["method"],
-                "window_size": window_size,
-                "description": f"{r['method']}平滑(window={window_size})"
+                "func": "clip_outliers",
+                "method": "clip",
+                "description": "裁剪异常值"
             })
             step_num += 1
 
+    # 处理噪声
+    noise_recommendations = [r for r in recommendations if r["issue"] == "noise"]
+    for r in noise_recommendations:
+        col = r["column"]
+        window_size = r.get("window_size", 5)
+
+        if r["method"] == "moving_avg":
+            df_processed = 滤波降噪.filter_moving_avg(df_processed, [col], window_size=window_size)
+        elif r["method"] == "median":
+            df_processed = 滤波降噪.filter_median(df_processed, [col], window_size=window_size)
+
+        plan.append({
+            "step": step_num,
+            "step_name": "降噪平滑",
+            "columns": [col],
+            "func": "filter_noise",
+            "method": r["method"],
+            "window_size": window_size,
+            "description": f"{r['method']}平滑(window={window_size})"
+        })
+        step_num += 1
+
     return df_processed, plan
-
-
-# ==================== 缺失值处理 ====================
-
-def fill_missing_ffill(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-    """前向填充"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns:
-            df[col] = df[col].ffill()
-    return df
-
-
-def fill_missing_bfill(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-    """后向填充"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns:
-            df[col] = df[col].bfill()
-    return df
-
-
-def fill_missing_mean(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-    """均值填充"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            df[col] = df[col].fillna(df[col].mean())
-    return df
-
-
-def fill_missing_median(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-    """中位数填充"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            df[col] = df[col].fillna(df[col].median())
-    return df
-
-
-def fill_missing_mode(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-    """众数填充"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns:
-            mode_val = df[col].mode()
-            if len(mode_val) > 0:
-                df[col] = df[col].fillna(mode_val[0])
-    return df
-
-
-def fill_missing_interpolate(df: pd.DataFrame, columns: List[str], method: str = 'linear',
-                           limit_direction: str = 'both') -> pd.DataFrame:
-    """线性插值"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            df[col] = df[col].interpolate(method=method, limit_direction=limit_direction)
-    return df
-
-
-# ==================== 滤波降噪 ====================
-
-def filter_median(df: pd.DataFrame, columns: List[str], window_size: int = 3) -> pd.DataFrame:
-    """中值滤波"""
-    if window_size % 2 != 1:
-        raise ValueError("window_size must be an odd number")
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            df[col] = signal.medfilt(df[col].values, kernel_size=window_size)
-    return df
-
-
-def filter_moving_avg(df: pd.DataFrame, columns: List[str], window_size: int = 5,
-                      center: bool = False) -> pd.DataFrame:
-    """移动平均滤波"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            df[col] = df[col].rolling(window=window_size, center=center, min_periods=1).mean()
-    return df
-
-
-def filter_fourier(df: pd.DataFrame, columns: List[str], cutoff_freq: float = 0.1,
-                   sampling_rate: Optional[float] = None) -> pd.DataFrame:
-    """傅里叶变换滤波"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            data = df[col].fillna(0).values
-            n = len(data)
-
-            fft_values = fft(data)
-            freqs = fftfreq(n)
-
-            if sampling_rate is not None:
-                cutoff = cutoff_freq / sampling_rate
-            else:
-                cutoff = cutoff_freq
-
-            mask = np.abs(freqs) > cutoff
-            fft_values_filtered = fft_values.copy()
-            fft_values_filtered[mask] = 0
-
-            filtered_data = np.real(ifft(fft_values_filtered))
-            df[col] = filtered_data
-
-    return df
-
-
-# ==================== 标准化/归一化 ====================
-
-def normalize_minmax(df: pd.DataFrame, columns: List[str],
-                    min_val: float = 0.0, max_val: float = 1.0) -> pd.DataFrame:
-    """Min-Max 归一化"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            col_min = df[col].min()
-            col_max = df[col].max()
-            if col_max - col_min == 0:
-                df[col] = min_val
-            else:
-                df[col] = (df[col] - col_min) / (col_max - col_min) * (max_val - min_val) + min_val
-    return df
-
-
-def normalize_custom_range(df: pd.DataFrame, columns: List[str],
-                         target_min: float, target_max: float,
-                         source_min: Optional[float] = None, source_max: Optional[float] = None) -> pd.DataFrame:
-    """指定区间缩放"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            s_min = source_min if source_min is not None else df[col].min()
-            s_max = source_max if source_max is not None else df[col].max()
-
-            if s_max - s_min == 0:
-                df[col] = target_min
-            else:
-                df[col] = (df[col] - s_min) / (s_max - s_min) * (target_max - target_min) + target_min
-    return df
-
-
-def normalize_log(df: pd.DataFrame, columns: List[str],
-                 offset: Optional[float] = None, base: str = 'e') -> pd.DataFrame:
-    """对数变换"""
-    df = df.copy()
-    for col in columns:
-        if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
-            if offset is None:
-                min_val = df[col].min()
-                if min_val <= 0:
-                    offset = 1 - min_val
-                else:
-                    offset = 0
-
-            shifted_data = df[col] + offset
-
-            if base == '10':
-                df[col] = np.log10(shifted_data)
-            else:
-                df[col] = np.log(shifted_data)
-
-    return df
 
 
 # ==================== 链式执行 ====================
 
 def chain_execute(df: pd.DataFrame, plan: List[Dict], verbose: bool = True) -> pd.DataFrame:
-    """链式执行多个数据处理操作
-
-    Args:
-        df: 输入 DataFrame
-        plan: 处理计划列表
-        verbose: 是否打印执行详情
-
-    Returns:
-        处理后的 DataFrame
-    """
+    """链式执行多个数据处理操作"""
     df_processed = df.copy()
 
     func_map = {
         "fill_missing": {
-            "ffill": fill_missing_ffill,
-            "bfill": fill_missing_bfill,
-            "mean": fill_missing_mean,
-            "median": fill_missing_median,
-            "mode": fill_missing_mode,
-            "interpolate": fill_missing_interpolate
+            "ffill": 缺失值填充.fill_missing_ffill,
+            "bfill": 缺失值填充.fill_missing_bfill,
+            "mean": 缺失值填充.fill_missing_mean,
+            "median": 缺失值填充.fill_missing_median,
+            "mode": 缺失值填充.fill_missing_mode,
+            "interpolate": 缺失值填充.fill_missing_interpolate
         },
         "filter_noise": {
-            "median": filter_median,
-            "moving_avg": filter_moving_avg,
-            "fourier": filter_fourier
+            "median": 滤波降噪.filter_median,
+            "moving_avg": 滤波降噪.filter_moving_avg,
+            "fourier": 滤波降噪.filter_fourier
         },
         "normalize": {
-            "minmax": normalize_minmax,
-            "custom_range": normalize_custom_range,
-            "log": normalize_log
+            "minmax": 标准化归一化.normalize_minmax,
+            "custom_range": 标准化归一化.normalize_custom_range,
+            "log": 标准化归一化.normalize_log,
+            "standardize": 标准化归一化.normalize_standardize
         }
     }
 
@@ -665,35 +455,6 @@ def chain_execute(df: pd.DataFrame, plan: List[Dict], verbose: bool = True) -> p
                 print(f"步骤{step_num}: {step_name} - 跳过")
             continue
 
-        # 自定义策略处理
-        if method == "custom_combine":
-            if verbose:
-                print(f"步骤{step_num}: {step_name} - {', '.join(columns)} (自定义功能组合)")
-            mode_source_cols = step_plan.get("mode_of", [])
-            for target_col in columns:
-                if target_col not in df_processed.columns:
-                    continue
-                all_values = []
-                for src_col in mode_source_cols:
-                    if src_col in df_processed.columns:
-                        all_values.extend(df_processed[src_col].dropna().tolist())
-                if all_values:
-                    from collections import Counter
-                    counter = Counter(all_values)
-                    mode_val = counter.most_common(1)[0][0]
-                    df_processed[target_col] = df_processed[target_col].fillna(mode_val)
-            continue
-
-        elif method == "custom_value":
-            fill_value = step_plan.get("value", 0)
-            if verbose:
-                print(f"步骤{step_num}: {step_name} - {', '.join(columns)} (填充指定值: {fill_value})")
-            for col in columns:
-                if col in df_processed.columns:
-                    df_processed[col] = df_processed[col].fillna(fill_value)
-            continue
-
-        # 预定义方法处理
         func = func_map.get(func_type, {}).get(method)
         if not func:
             if verbose:
@@ -701,8 +462,7 @@ def chain_execute(df: pd.DataFrame, plan: List[Dict], verbose: bool = True) -> p
             continue
 
         params = {"df": df_processed, "columns": columns}
-        reserved_keys = ["step", "step_name", "columns", "func", "method", "type",
-                        "description", "mode_of", "value", "expression"]
+        reserved_keys = ["step", "step_name", "columns", "func", "method", "type", "description"]
         extra_params = {k: v for k, v in step_plan.items() if k not in reserved_keys}
         params.update(extra_params)
 
@@ -722,20 +482,7 @@ def generate_evaluation_report(df_before: pd.DataFrame, df_after: pd.DataFrame,
                                 plan: List[Dict], file_path: str = "",
                                 business_scene: str = "", target_columns: List[str] = None,
                                 save_path: str = "") -> str:
-    """生成评价结果报告
-
-    Args:
-        df_before: 处理前 DataFrame
-        df_after: 处理后 DataFrame
-        plan: 处理计划
-        file_path: 文件路径
-        business_scene: 业务场景
-        target_columns: 处理列
-        save_path: 保存路径，如果提供则自动保存为 Markdown 文件
-
-    Returns:
-        Markdown 格式评价报告
-    """
+    """生成评价结果报告"""
     if target_columns is None:
         target_columns = []
 
@@ -765,7 +512,6 @@ def generate_evaluation_report(df_before: pd.DataFrame, df_after: pd.DataFrame,
         columns = step_plan.get("columns", [])
         method = step_plan.get("method") or step_plan.get("type", "N/A")
 
-        # 计算结果
         result = ""
         if step_plan.get("func") == "fill_missing":
             filled_count = 0
@@ -796,20 +542,13 @@ def generate_evaluation_report(df_before: pd.DataFrame, df_after: pd.DataFrame,
 
     for col in all_cols:
         if col in df_before.columns and col in df_after.columns:
-            # 只对数值型列计算统计指标
             if df_before[col].dtype in ["int64", "float64", "int32", "float32"]:
                 before_mean = df_before[col].mean()
                 after_mean = df_after[col].mean()
                 before_std = df_before[col].std()
                 after_std = df_after[col].std()
                 lines.append(f"| {col} | {before_mean:.4f} | {after_mean:.4f} | {before_std:.4f} | {after_std:.4f} |")
-            else:
-                # 类别列显示填充前后缺失值变化
-                before_missing = df_before[col].isna().sum()
-                after_missing = df_after[col].isna().sum()
-                lines.append(f"| {col} | 缺失{before_missing}个 | 缺失{after_missing}个 | - | - |")
 
-    # 整体效果评价
     lines.extend([
         "",
         "### 整体效果评价",
@@ -820,7 +559,6 @@ def generate_evaluation_report(df_before: pd.DataFrame, df_after: pd.DataFrame,
 
     report_content = "\n".join(lines)
 
-    # 如果提供了保存路径，自动保存为 Markdown 文件
     if save_path:
         with open(save_path, 'w', encoding='utf-8') as f:
             f.write(report_content)
@@ -830,29 +568,14 @@ def generate_evaluation_report(df_before: pd.DataFrame, df_after: pd.DataFrame,
 
 def generate_comparison_chart(df_before: pd.DataFrame, df_after: pd.DataFrame,
                               plan: List[Dict], save_path: str = "数据处理前后图表对比.png") -> str:
-    """生成对比图表
-
-    Args:
-        df_before: 处理前 DataFrame
-        df_after: 处理后 DataFrame
-        plan: 处理计划
-        save_path: 保存路径
-
-    Returns:
-        图表保存路径
-    """
+    """生成对比图表"""
     try:
         import matplotlib.pyplot as plt
         import matplotlib
-
-        # 使用非交互式后端
         matplotlib.use('Agg')
-
-        # 设置中文字体
         plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'SimHei', 'Microsoft YaHei', 'Arial']
-        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示为方块的问题
+        plt.rcParams['axes.unicode_minus'] = False
 
-        # 收集所有处理的列
         all_cols = set()
         for step_plan in plan:
             all_cols.update(step_plan.get("columns", []))
@@ -860,7 +583,6 @@ def generate_comparison_chart(df_before: pd.DataFrame, df_after: pd.DataFrame,
         if not all_cols:
             return ""
 
-        # 创建图表
         n_cols = len(all_cols)
         fig, axes = plt.subplots(n_cols, 2, figsize=(12, 4 * n_cols))
 
@@ -871,13 +593,11 @@ def generate_comparison_chart(df_before: pd.DataFrame, df_after: pd.DataFrame,
             if col not in df_before.columns or col not in df_after.columns:
                 continue
 
-            # 处理前数据分布
             axes[idx, 0].hist(df_before[col].dropna(), bins=30, alpha=0.7, color='blue', edgecolor='black')
             axes[idx, 0].set_title(f'{col} - 处理前')
             axes[idx, 0].set_xlabel('值')
             axes[idx, 0].set_ylabel('频数')
 
-            # 处理后数据分布
             axes[idx, 1].hist(df_after[col].dropna(), bins=30, alpha=0.7, color='green', edgecolor='black')
             axes[idx, 1].set_title(f'{col} - 处理后')
             axes[idx, 1].set_xlabel('值')
@@ -892,13 +612,14 @@ def generate_comparison_chart(df_before: pd.DataFrame, df_after: pd.DataFrame,
         return f"图表生成失败: {str(e)}"
 
 
-if __name__ == "__main__":
-    print("Process - 数据处理子 skill")
-    print("\n支持的函数：")
-    print("  - 缺失值处理: fill_missing_ffill, fill_missing_bfill, fill_missing_mean,")
-    print("               fill_missing_median, fill_missing_mode, fill_missing_interpolate")
-    print("  - 滤波降噪: filter_median, filter_moving_avg, filter_fourier")
-    print("  - 标准化: normalize_minmax, normalize_custom_range, normalize_log")
-    print("  - 链式执行: chain_execute")
-    print("  - 评价报告: generate_evaluation_report")
-    print("  - 对比图表: generate_comparison_chart")
+# 导出所有函数
+__all__ = [
+    'diagnose_data',
+    'print_diagnosis_report',
+    'interactive_confirm_and_process',
+    'modify_recommendations',
+    'apply_recommendations',
+    'chain_execute',
+    'generate_evaluation_report',
+    'generate_comparison_chart'
+]

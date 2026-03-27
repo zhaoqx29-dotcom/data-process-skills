@@ -138,3 +138,23 @@ plan = generate_plan(strategies, parsed_columns)
 | 需消除量纲影响 | normalize_minmax | Min-Max 归一化 |
 | 需特定业务范围 | normalize_custom_range | 指定区间缩放 |
 | 右偏分布/长尾数据 | normalize_log | 对数变换 |
+| 数据接近正态分布 | normalize_standardize | Z-score标准化 |
+
+### 数据替换推荐
+| 数据特征 | 推荐方法 | 说明 |
+|---------|----------|------|
+| 右偏分布/指数增长 | transform_log | 对数变换 |
+| 数据包含0 | transform_log1p | log(1+x)变换 |
+| 时间序列去趋势 | transform_diff | 一阶差分 |
+| 增长率/环比变化 | transform_pct_change | 百分比变化 |
+| 无序类别/线性模型 | encode_onehot | 独热编码 |
+| 有序类别/树模型 | encode_label | 标签编码 |
+
+### 异常值处理推荐
+| 数据特征 | 推荐方法 | 说明 |
+|---------|----------|------|
+| 正态分布数据 | outlier_3sigma_clip | 3-Sigma裁剪 |
+| 非正态分布 | outlier_iqr_clip | IQR裁剪(默认1.5倍) |
+| 高频检测(时间序列) | outlier_moving_std_clip | 移动标准差裁剪 |
+| 复杂分布/未知模式 | outlier_dbscan_remove | DBSCAN聚类移除 |
+| 快速标准化检测 | outlier_zscore_clip | Z-score裁剪 |
