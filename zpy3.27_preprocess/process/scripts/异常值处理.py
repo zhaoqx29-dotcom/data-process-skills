@@ -49,8 +49,9 @@ def outlier_3sigma_detect(df: pd.DataFrame, columns: List[str], threshold: float
 
 
 def outlier_3sigma_clip(df: pd.DataFrame, columns: List[str], threshold: float = 3.0) -> pd.DataFrame:
-    """3-Sigma 裁剪：将异常值裁剪到边界"""
+    """3-Sigma 裁剪：将异常值所在的整行删除"""
     df = df.copy()
+    mask = pd.Series([False] * len(df), index=df.index)
     for col in columns:
         if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
             mean = df[col].mean()
@@ -59,8 +60,15 @@ def outlier_3sigma_clip(df: pd.DataFrame, columns: List[str], threshold: float =
                 continue
             lower = mean - threshold * std
             upper = mean + threshold * std
-            df[col] = df[col].clip(lower, upper)
-    return df
+            col_mask = (df[col] < lower) | (df[col] > upper)
+            mask = mask | col_mask
+    # 删除包含异常值的行
+    return df[~mask].reset_index(drop=True)
+
+
+def outlier_3sigma_remove(df: pd.DataFrame, columns: List[str], threshold: float = 3.0) -> pd.DataFrame:
+    """3-Sigma 移除：将异常值所在的整行删除"""
+    return outlier_3sigma_clip(df, columns, threshold)
 
 
 # ==================== IQR 方法 ====================
@@ -105,8 +113,9 @@ def outlier_iqr_detect(df: pd.DataFrame, columns: List[str], k: float = 1.5) -> 
 
 
 def outlier_iqr_clip(df: pd.DataFrame, columns: List[str], k: float = 1.5) -> pd.DataFrame:
-    """IQR 裁剪"""
+    """IQR 裁剪：将异常值所在的整行删除"""
     df = df.copy()
+    mask = pd.Series([False] * len(df), index=df.index)
     for col in columns:
         if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
             Q1 = df[col].quantile(0.25)
@@ -114,8 +123,10 @@ def outlier_iqr_clip(df: pd.DataFrame, columns: List[str], k: float = 1.5) -> pd
             IQR = Q3 - Q1
             lower = Q1 - k * IQR
             upper = Q3 + k * IQR
-            df[col] = df[col].clip(lower, upper)
-    return df
+            col_mask = (df[col] < lower) | (df[col] > upper)
+            mask = mask | col_mask
+    # 删除包含异常值的行
+    return df[~mask].reset_index(drop=True)
 
 
 # ==================== Z-Score 方法 ====================
@@ -148,8 +159,8 @@ def outlier_zscore_detect(df: pd.DataFrame, columns: List[str], threshold: float
 
 
 def outlier_zscore_clip(df: pd.DataFrame, columns: List[str], threshold: float = 3.0) -> pd.DataFrame:
-    """Z-score 裁剪"""
-    return outlier_3sigma_clip(df, columns, threshold)
+    """Z-score 裁剪：将异常值所在的整行删除"""
+    return outlier_3sigma_remove(df, columns, threshold)
 
 
 # ==================== 移动标准差法 ====================
@@ -185,19 +196,20 @@ def outlier_moving_std_detect(df: pd.DataFrame, columns: List[str],
 
 def outlier_moving_std_clip(df: pd.DataFrame, columns: List[str],
                              window: int = 10, threshold: float = 3.0) -> pd.DataFrame:
-    """移动标准差法 裁剪"""
+    """移动标准差法 裁剪：将异常值所在的整行删除"""
     df = df.copy()
+    mask = pd.Series([False] * len(df), index=df.index)
     for col in columns:
         if col in df.columns and df[col].dtype in ["int64", "float64", "int32", "float32"]:
             rolling_mean = df[col].rolling(window=window, center=True, min_periods=1).mean()
             rolling_std = df[col].rolling(window=window, center=True, min_periods=1).std()
             rolling_std = rolling_std.replace(0, 1)
 
-            lower = rolling_mean - threshold * rolling_std
-            upper = rolling_mean + threshold * rolling_std
-
-            df[col] = df[col].clip(lower, upper)
-    return df
+            z_scores = np.abs((df[col] - rolling_mean) / rolling_std)
+            col_mask = z_scores > threshold
+            mask = mask | col_mask
+    # 删除包含异常值的行
+    return df[~mask].reset_index(drop=True)
 
 
 # ==================== 聚类检测 (DBSCAN) ====================
@@ -313,6 +325,7 @@ def handle_outliers(df: pd.DataFrame, columns: List[str],
 __all__ = [
     'outlier_3sigma_detect',
     'outlier_3sigma_clip',
+    'outlier_3sigma_remove',
     'outlier_iqr_detect',
     'outlier_iqr_clip',
     'outlier_zscore_detect',

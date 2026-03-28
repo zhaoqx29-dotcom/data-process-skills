@@ -59,6 +59,7 @@ from .scripts.数据替换 import (
 from .scripts.异常值处理 import (
     outlier_3sigma_detect,
     outlier_3sigma_clip,
+    outlier_3sigma_remove,
     outlier_iqr_detect,
     outlier_iqr_clip,
     outlier_zscore_detect,
@@ -104,6 +105,7 @@ __all__ = [
     'encode_ordinal',
     'outlier_3sigma_detect',
     'outlier_3sigma_clip',
+    'outlier_3sigma_remove',
     'outlier_iqr_detect',
     'outlier_iqr_clip',
     'outlier_zscore_detect',

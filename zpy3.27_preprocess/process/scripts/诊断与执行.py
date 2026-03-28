@@ -14,7 +14,8 @@ except ImportError:
     import 缺失值填充
     import 滤波降噪
     import 标准化归一化
-    import 标准化归一化
+    import 数据替换
+    import 异常值处理
 
 
 # ==================== 数据诊断 ====================
@@ -134,38 +135,38 @@ def diagnose_data(df: pd.DataFrame) -> Dict:
 
 
 def print_diagnosis_report(diagnosis: Dict) -> str:
-    """打印诊断报告并返回格式化字符串"""
-    lines = ["=" * 60, "数据诊断报告", "=" * 60, ""]
+    """打印诊断报告并返回 Markdown 格式字符串"""
+    lines = ["# 数据诊断报告", ""]
 
     # 缺失值
     if diagnosis["missing"]:
-        lines.append("【缺失值】")
+        lines.append("## 缺失值")
         for col, info in diagnosis["missing"].items():
-            lines.append(f"  - {col}: {info['count']}个 ({info['ratio']*100:.1f}%) → 建议用{info['method']}填充")
+            lines.append(f"| {col} | {info['count']}个 | {info['ratio']*100:.1f}% | 建议用{info['method']}填充 |")
         lines.append("")
 
     # 异常值
     if diagnosis["outliers"]:
-        lines.append("【异常值】(IQR方法, 3倍IQR)")
+        lines.append("## 异常值 (IQR方法, 3倍IQR)")
         for col, info in diagnosis["outliers"].items():
-            lines.append(f"  - {col}: {info['count']}个 → 建议裁剪到边界")
+            lines.append(f"| {col} | {info['count']}个 | 建议删除整行 |")
         lines.append("")
 
     # 重复行
     if diagnosis["duplicates"] > 0:
-        lines.append(f"【重复行】: {diagnosis['duplicates']}行 → 建议删除")
+        lines.append(f"## 重复行: {diagnosis['duplicates']}行 → 建议删除")
         lines.append("")
 
     # 噪声
     if diagnosis["noise"]:
-        lines.append("【噪声】(变异系数CV > 0.5)")
+        lines.append("## 噪声 (变异系数CV > 0.5)")
         for col, info in diagnosis["noise"].items():
-            lines.append(f"  - {col}: CV={info['cv']:.2f} → 建议用{info['method']}平滑")
+            lines.append(f"| {col} | CV={info['cv']:.2f} | 建议用{info['method']}平滑 |")
         lines.append("")
 
     # 总结
     total_issues = len(diagnosis["recommendations"])
-    lines.append(f"共检测到 {total_issues} 个问题，需要处理。")
+    lines.append(f"**共检测到 {total_issues} 个问题，需要处理。**")
 
     return "\n".join(lines)
 
@@ -270,11 +271,11 @@ def modify_recommendations(recommendations: List[Dict]) -> List[Dict]:
 
         elif r["issue"] == "outliers":
             print("请选择处理方式：")
-            print("  1) clip   - 裁剪到边界")
+            print("  1) drop   - 删除整行")
             print("  2) skip   - 跳过（不处理）")
             choice = input("> ").strip()
             if choice in ["1", "2"]:
-                r["method"] = "clip" if choice == "1" else "skip"
+                r["method"] = "drop" if choice == "1" else "skip"
                 if choice == "2":
                     r["action"] = "skip"
 
@@ -376,17 +377,18 @@ def apply_recommendations(df: pd.DataFrame, recommendations: List[Dict]) -> tupl
     for r in outlier_recommendations:
         col = r["column"]
         if col in df_processed.columns:
-            df_processed[col] = df_processed[col].clip(
-                r.get("lower_bound", -np.inf),
-                r.get("upper_bound", np.inf)
-            )
+            # 删除包含异常值的整行
+            df_processed = df_processed[
+                (df_processed[col] >= r.get("lower_bound", -np.inf)) &
+                (df_processed[col] <= r.get("upper_bound", np.inf))
+            ]
             plan.append({
                 "step": step_num,
-                "step_name": "裁剪异常值",
+                "step_name": "删除异常值行",
                 "columns": [col],
-                "func": "clip_outliers",
-                "method": "clip",
-                "description": "裁剪异常值"
+                "func": "drop_outliers",
+                "method": "drop",
+                "description": "删除异常值所在行"
             })
             step_num += 1
 
@@ -440,6 +442,25 @@ def chain_execute(df: pd.DataFrame, plan: List[Dict], verbose: bool = True) -> p
             "custom_range": 标准化归一化.normalize_custom_range,
             "log": 标准化归一化.normalize_log,
             "standardize": 标准化归一化.normalize_standardize
+        },
+        "transform": {
+            "log": 数据替换.transform_log,
+            "log1p": 数据替换.transform_log1p,
+            "diff": 数据替换.transform_diff,
+            "diff2": 数据替换.transform_diff2,
+            "pct_change": 数据替换.transform_pct_change,
+            "label": 数据替换.encode_label,
+            "onehot": 数据替换.encode_onehot,
+            "target": 数据替换.encode_target,
+            "ordinal": 数据替换.encode_ordinal
+        },
+        "outlier": {
+            "3sigma_clip": 异常值处理.outlier_3sigma_clip,
+            "3sigma_remove": 异常值处理.outlier_3sigma_remove,
+            "iqr_clip": 异常值处理.outlier_iqr_clip,
+            "zscore_clip": 异常值处理.outlier_zscore_clip,
+            "moving_std_clip": 异常值处理.outlier_moving_std_clip,
+            "dbscan_remove": 异常值处理.outlier_dbscan_remove
         }
     }
 
